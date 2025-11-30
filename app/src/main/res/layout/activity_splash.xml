@@ -1,0 +1,23 @@
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FCF6DF">
+
+    <ImageView
+        android:id="@+id/musicIcon"
+        android:layout_width="3000dp"
+        android:layout_height="3000dp"
+        android:layout_centerInParent="true"
+        android:src="@drawable/music_notes"
+        android:contentDescription="Music Notes Icon" />
+
+    <ProgressBar
+        android:id="@+id/progressBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/musicIcon"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="30dp"
+        android:indeterminateTint="#2C3E50" />
+
+</RelativeLayout>
