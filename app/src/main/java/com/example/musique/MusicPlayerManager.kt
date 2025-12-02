@@ -8,11 +8,38 @@ object MusicPlayerManager {
     private var mediaPlayer: MediaPlayer? = null
     private var currentMusic: Music? = null
     private var isPlaying = false
+    private var isShuffleMode = false
+
+    // Playlist et callback pour la fin de lecture
+    private var playlist: List<Music> = emptyList()
+    private var currentIndex: Int = -1
+    private var onMusicComplete: (() -> Unit)? = null
+
+    fun setPlaylist(musicList: List<Music>) {
+        playlist = musicList
+    }
+
+    fun setShuffleMode(enabled: Boolean) {
+        isShuffleMode = enabled
+    }
+
+    fun isShuffleMode(): Boolean = isShuffleMode
+
+    fun setOnMusicCompleteListener(listener: () -> Unit) {
+        onMusicComplete = listener
+    }
 
     fun playMusic(context: Context, music: Music, onError: (String) -> Unit) {
         try {
             // Arrêter la musique précédente si elle joue
             stopMusic()
+
+            // Trouver l'index de la musique dans la playlist
+            currentIndex = playlist.indexOf(music)
+            if (currentIndex == -1) {
+                // Si la musique n'est pas dans la playlist, on l'ajoute
+                currentIndex = 0
+            }
 
             // Créer un nouveau MediaPlayer
             mediaPlayer = MediaPlayer().apply {
@@ -24,9 +51,9 @@ object MusicPlayerManager {
             currentMusic = music
             isPlaying = true
 
-            // Listener pour savoir quand la musique se termine
+            // Listener pour lancer la musique suivante automatiquement
             mediaPlayer?.setOnCompletionListener {
-                stopMusic()
+                playNextMusic(context, onError)
             }
 
         } catch (e: IOException) {
@@ -36,6 +63,50 @@ object MusicPlayerManager {
             onError("Erreur: ${e.message}")
             e.printStackTrace()
         }
+    }
+
+    fun playNextMusic(context: Context, onError: (String) -> Unit) {
+        if (playlist.isEmpty()) return
+
+        val nextIndex = if (isShuffleMode) {
+            // Mode aléatoire : choisir une musique au hasard
+            playlist.indices.random()
+        } else {
+            // Mode séquentiel : musique suivante
+            if (currentIndex + 1 < playlist.size) {
+                currentIndex + 1
+            } else {
+                0 // Retour au début
+            }
+        }
+
+        val nextMusic = playlist[nextIndex]
+        playMusic(context, nextMusic, onError)
+
+        // Notifier l'UI
+        onMusicComplete?.invoke()
+    }
+
+    fun playPreviousMusic(context: Context, onError: (String) -> Unit) {
+        if (playlist.isEmpty()) return
+
+        val prevIndex = if (isShuffleMode) {
+            // Mode aléatoire : choisir une musique au hasard
+            playlist.indices.random()
+        } else {
+            // Mode séquentiel : musique précédente
+            if (currentIndex - 1 >= 0) {
+                currentIndex - 1
+            } else {
+                playlist.size - 1 // Aller à la fin
+            }
+        }
+
+        val prevMusic = playlist[prevIndex]
+        playMusic(context, prevMusic, onError)
+
+        // Notifier l'UI
+        onMusicComplete?.invoke()
     }
 
     fun pauseMusic() {
@@ -64,7 +135,6 @@ object MusicPlayerManager {
             it.release()
         }
         mediaPlayer = null
-        currentMusic = null
         isPlaying = false
     }
 
@@ -79,4 +149,6 @@ object MusicPlayerManager {
     fun seekTo(position: Int) {
         mediaPlayer?.seekTo(position)
     }
+
+    fun getCurrentIndex(): Int = currentIndex
 }

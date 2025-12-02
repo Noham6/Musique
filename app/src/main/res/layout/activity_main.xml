@@ -109,10 +109,11 @@
             android:padding="8dp">
 
             <ImageView
+                android:id="@+id/pause"
                 android:layout_width="30dp"
                 android:layout_height="30dp"
                 android:src="@android:drawable/ic_media_play"
-                android:contentDescription="Play" />
+                android:contentDescription="Play/Pause" />
 
             <TextView
                 android:layout_width="0dp"
@@ -164,9 +165,9 @@
             android:orientation="vertical">
 
             <ImageView
-                android:layout_width="30dp"
-                android:layout_height="30dp"
-                android:src="@android:drawable/ic_menu_myplaces"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/accueil"
                 android:contentDescription="Accueil" />
 
             <TextView
@@ -188,9 +189,9 @@
             android:orientation="vertical">
 
             <ImageView
-                android:layout_width="30dp"
-                android:layout_height="30dp"
-                android:src="@android:drawable/ic_menu_gallery"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/playlist"
                 android:contentDescription="Albums" />
 
             <TextView

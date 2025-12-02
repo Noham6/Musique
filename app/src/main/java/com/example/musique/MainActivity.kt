@@ -15,6 +15,7 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.MenuItem
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.Toast
@@ -34,8 +35,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var musicList: MutableList<Music>
     private lateinit var filteredList: MutableList<Music>
     private lateinit var searchBar: EditText
+    private lateinit var btnLectureAleatoire: LinearLayout
+    private lateinit var pause: ImageView
 
     private val PERMISSION_REQUEST_CODE = 101
+
+    // Mode lecture aléatoire
+    private var isShuffleEnabled = false
 
     // Pour gérer la suppression sur Android 10+
     private var pendingDeleteMusic: Music? = null
@@ -68,15 +74,25 @@ class MainActivity : AppCompatActivity() {
         searchBar = findViewById(R.id.searchBar)
         recyclerView = findViewById(R.id.recyclerViewMusics)
         recyclerView.layoutManager = LinearLayoutManager(this)
+        btnLectureAleatoire = findViewById(R.id.btnLectureAleatoire)
+        pause = findViewById(R.id.pause)
 
         // Initialiser les listes
         musicList = mutableListOf()
         filteredList = mutableListOf()
 
+        // Configurer le listener pour la fin de lecture automatique
+        MusicPlayerManager.setOnMusicCompleteListener {
+            runOnUiThread {
+                updateShuffleButtonUI()
+            }
+        }
+
         // Configuration de l'adaptateur
         musicAdapter = MusicAdapter(filteredList, object : MusicAdapter.OnMusicClickListener {
             override fun onMusicClick(music: Music) {
-                // Lancer la lecture de la musique
+                // Définir la playlist et lancer la musique
+                MusicPlayerManager.setPlaylist(filteredList)
                 MusicPlayerManager.playMusic(this@MainActivity, music) { error ->
                     Toast.makeText(this@MainActivity, error, Toast.LENGTH_SHORT).show()
                 }
@@ -181,6 +197,9 @@ class MainActivity : AppCompatActivity() {
 
         if (musicList.isEmpty()) {
             Toast.makeText(this, "Aucune musique trouvée", Toast.LENGTH_SHORT).show()
+        } else {
+            // Définir la playlist dès que les musiques sont chargées
+            MusicPlayerManager.setPlaylist(musicList)
         }
 
         filteredList.clear()
@@ -192,6 +211,17 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         // Arrêter la musique quand l'activité est détruite
         MusicPlayerManager.stopMusic()
+    }
+
+    private fun updateShuffleButtonUI() {
+        // Changer l'icône Play/Pause selon le mode
+        if (isShuffleEnabled) {
+            // Mode aléatoire ACTIVÉ → Afficher icône PAUSE
+            pause.setImageResource(android.R.drawable.ic_media_pause)
+        } else {
+            // Mode aléatoire DÉSACTIVÉ → Afficher icône PLAY
+            pause.setImageResource(android.R.drawable.ic_media_play)
+        }
     }
 
     private fun showMusicMenu(music: Music, position: Int) {
@@ -328,6 +358,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        // Mettre à jour la playlist après le filtrage
+        MusicPlayerManager.setPlaylist(filteredList)
         musicAdapter.updateList(filteredList)
     }
 
@@ -345,15 +377,25 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Lecture aléatoire
-        findViewById<LinearLayout>(R.id.btnLectureAleatoire).setOnClickListener {
-            if (musicList.isNotEmpty()) {
+        btnLectureAleatoire.setOnClickListener {
+            // Toggle le mode aléatoire
+            isShuffleEnabled = !isShuffleEnabled
+            MusicPlayerManager.setShuffleMode(isShuffleEnabled)
+
+            updateShuffleButtonUI()
+
+            // Si on active le mode aléatoire et qu'il y a des musiques
+            if (isShuffleEnabled && musicList.isNotEmpty()) {
                 val randomMusic = musicList.random()
+                MusicPlayerManager.setPlaylist(musicList)
                 MusicPlayerManager.playMusic(this, randomMusic) { error ->
                     Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
                 }
                 Toast.makeText(this, "Lecture aléatoire: ${randomMusic.title}", Toast.LENGTH_SHORT).show()
-            } else {
+            } else if (musicList.isEmpty()) {
                 Toast.makeText(this, "Aucune musique disponible", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Mode aléatoire désactivé", Toast.LENGTH_SHORT).show()
             }
         }
 
