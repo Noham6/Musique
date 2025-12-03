@@ -4,22 +4,24 @@ import android.Manifest
 import android.app.AlertDialog
 import android.app.RecoverableSecurityException
 import android.content.ContentUris
-import android.content.IntentSender
 import android.content.pm.PackageManager
 import android.database.Cursor
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.MenuItem
+import android.view.View
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
+import android.widget.SeekBar
+import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -27,6 +29,7 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
+import kotlin.time.Duration
 
 class MainActivity : AppCompatActivity() {
 
@@ -36,12 +39,42 @@ class MainActivity : AppCompatActivity() {
     private lateinit var filteredList: MutableList<Music>
     private lateinit var searchBar: EditText
     private lateinit var btnLectureAleatoire: LinearLayout
-    private lateinit var pause: ImageView
+    private lateinit var iconPlayPause: ImageView
+
+    // Lecteur audio en bas
+    private lateinit var musicPlayerBar: LinearLayout
+    private lateinit var playerTitle: TextView
+    private lateinit var playerArtist: TextView
+    private lateinit var btnPlayPausePlayer: ImageView
+    private lateinit var btnPrevious: ImageView
+    private lateinit var btnNext: ImageView
+    private lateinit var seekBar: SeekBar
+    private lateinit var currentTime: TextView
+    private lateinit var totalTime: TextView
 
     private val PERMISSION_REQUEST_CODE = 101
 
     // Mode lecture aléatoire
     private var isShuffleEnabled = false
+
+    // Handler pour mettre à jour la SeekBar
+    private val handler = Handler(Looper.getMainLooper())
+    private val updateSeekBar = object : Runnable {
+        override fun run() {
+            if (MusicPlayerManager.isPlaying()) {
+                val current = MusicPlayerManager.getCurrentPosition()
+                val duration = MusicPlayerManager.getDuration()
+
+                seekBar.max = duration
+                seekBar.progress = current
+
+                currentTime.text = formatTime(current)
+                totalTime.text = formatTime(duration)
+
+                handler.postDelayed(this, 1000)
+            }
+        }
+    }
 
     // Pour gérer la suppression sur Android 10+
     private var pendingDeleteMusic: Music? = null
@@ -75,7 +108,18 @@ class MainActivity : AppCompatActivity() {
         recyclerView = findViewById(R.id.recyclerViewMusics)
         recyclerView.layoutManager = LinearLayoutManager(this)
         btnLectureAleatoire = findViewById(R.id.btnLectureAleatoire)
-        pause = findViewById(R.id.pause)
+        iconPlayPause = findViewById(R.id.iconPlayPause)
+
+        // Lecteur audio
+        musicPlayerBar = findViewById(R.id.musicPlayerBar)
+        playerTitle = findViewById(R.id.playerTitle)
+        playerArtist = findViewById(R.id.playerArtist)
+        btnPlayPausePlayer = findViewById(R.id.btnPlayPausePlayer)
+        btnPrevious = findViewById(R.id.btnPrevious)
+        btnNext = findViewById(R.id.btnNext)
+        seekBar = findViewById(R.id.seekBar)
+        currentTime = findViewById(R.id.currentTime)
+        totalTime = findViewById(R.id.totalTime)
 
         // Initialiser les listes
         musicList = mutableListOf()
@@ -85,6 +129,7 @@ class MainActivity : AppCompatActivity() {
         MusicPlayerManager.setOnMusicCompleteListener {
             runOnUiThread {
                 updateShuffleButtonUI()
+                updatePlayerUI()
             }
         }
 
@@ -96,6 +141,10 @@ class MainActivity : AppCompatActivity() {
                 MusicPlayerManager.playMusic(this@MainActivity, music) { error ->
                     Toast.makeText(this@MainActivity, error, Toast.LENGTH_SHORT).show()
                 }
+
+                // Afficher le lecteur
+                showMusicPlayer(music)
+
                 Toast.makeText(this@MainActivity, "Lecture: ${music.title}", Toast.LENGTH_SHORT).show()
             }
 
@@ -124,11 +173,84 @@ class MainActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable?) {}
         })
 
+        // Boutons du lecteur
+        setupPlayerButtons()
+
         // Boutons
         setupButtons()
 
+        // SeekBar
+        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    MusicPlayerManager.seekTo(progress)
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
         // Vérifier et demander les permissions
         checkPermissions()
+    }
+
+    private fun setupPlayerButtons() {
+        // Play/Pause
+        btnPlayPausePlayer.setOnClickListener {
+            if (MusicPlayerManager.isPlaying()) {
+                MusicPlayerManager.pauseMusic()
+                btnPlayPausePlayer.setImageResource(android.R.drawable.ic_media_play)
+            } else {
+                MusicPlayerManager.resumeMusic()
+                btnPlayPausePlayer.setImageResource(android.R.drawable.ic_media_pause)
+                handler.post(updateSeekBar)
+            }
+        }
+
+        // Précédent
+        btnPrevious.setOnClickListener {
+            MusicPlayerManager.playPreviousMusic(this) { error ->
+                Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Suivant
+        btnNext.setOnClickListener {
+            MusicPlayerManager.playNextMusic(this) { error ->
+                Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun showMusicPlayer(music: Music) {
+        musicPlayerBar.visibility = View.VISIBLE
+        playerTitle.text = music.title
+        playerArtist.text = music.artist
+        btnPlayPausePlayer.setImageResource(android.R.drawable.ic_media_pause)
+
+        // Démarrer la mise à jour de la SeekBar
+        handler.post(updateSeekBar)
+    }
+
+    private fun updatePlayerUI() {
+        val currentMusic = MusicPlayerManager.getCurrentMusic()
+        if (currentMusic != null) {
+            playerTitle.text = currentMusic.title
+            playerArtist.text = currentMusic.artist
+
+            if (MusicPlayerManager.isPlaying()) {
+                btnPlayPausePlayer.setImageResource(android.R.drawable.ic_media_pause)
+                handler.post(updateSeekBar)
+            } else {
+                btnPlayPausePlayer.setImageResource(android.R.drawable.ic_media_play)
+            }
+        }
+    }
+
+    private fun formatTime(milliseconds: Int): String {
+        val seconds = (milliseconds / 1000) % 60
+        val minutes = (milliseconds / 1000) / 60
+        return String.format("%d:%02d", minutes, seconds)
     }
 
     private fun checkPermissions() {
@@ -198,7 +320,6 @@ class MainActivity : AppCompatActivity() {
         if (musicList.isEmpty()) {
             Toast.makeText(this, "Aucune musique trouvée", Toast.LENGTH_SHORT).show()
         } else {
-            // Définir la playlist dès que les musiques sont chargées
             MusicPlayerManager.setPlaylist(musicList)
         }
 
@@ -207,20 +328,61 @@ class MainActivity : AppCompatActivity() {
         musicAdapter.notifyDataSetChanged()
     }
 
+    private fun filterMusic(query: String) {
+        filteredList.clear()
+        if (query.isEmpty()) {
+            filteredList.addAll(musicList)
+        } else {
+            musicList.forEach { music ->
+                if (music.title.lowercase().contains(query.lowercase())) {
+                    filteredList.add(music)
+                }
+            }
+        }
+        MusicPlayerManager.setPlaylist(filteredList)
+        musicAdapter.updateList(filteredList)
+    }
+
+    private fun setupButtons() {
+        findViewById<LinearLayout>(R.id.btnFavoris).setOnClickListener {
+        }
+
+        findViewById<LinearLayout>(R.id.btnCreer).setOnClickListener {
+        }
+
+        btnLectureAleatoire.setOnClickListener {
+            isShuffleEnabled = !isShuffleEnabled
+            MusicPlayerManager.setShuffleMode(isShuffleEnabled)
+
+            updateShuffleButtonUI()
+
+            if (isShuffleEnabled && musicList.isNotEmpty()) {
+                val randomMusic = musicList.random()
+                MusicPlayerManager.setPlaylist(musicList)
+                MusicPlayerManager.playMusic(this, randomMusic) { error ->
+                    Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
+                }
+                showMusicPlayer(randomMusic)
+            } else if (musicList.isEmpty()) {
+                Toast.makeText(this, "Aucune musique disponible", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Mode aléatoire désactivé", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        // Arrêter la musique quand l'activité est détruite
+        handler.removeCallbacks(updateSeekBar)
         MusicPlayerManager.stopMusic()
     }
 
     private fun updateShuffleButtonUI() {
-        // Changer l'icône Play/Pause selon le mode
         if (isShuffleEnabled) {
-            // Mode aléatoire ACTIVÉ → Afficher icône PAUSE
-            pause.setImageResource(android.R.drawable.ic_media_pause)
+            iconPlayPause.setImageResource(android.R.drawable.ic_media_pause)
         } else {
-            // Mode aléatoire DÉSACTIVÉ → Afficher icône PLAY
-            pause.setImageResource(android.R.drawable.ic_media_play)
+            iconPlayPause.setImageResource(android.R.drawable.ic_media_play)
         }
     }
 
@@ -229,23 +391,15 @@ class MainActivity : AppCompatActivity() {
 
         popupMenu.menu.add(0, 1, 0, "Supprimer")
         popupMenu.menu.add(0, 2, 1, "Informations")
-        popupMenu.menu.add(0, 3, 2, "Partager")
 
         popupMenu.setOnMenuItemClickListener { menuItem: MenuItem ->
             when (menuItem.itemId) {
                 1 -> {
-                    // Supprimer la musique
                     showDeleteConfirmation(music, position)
                     true
                 }
                 2 -> {
-                    // Afficher les informations
                     showMusicInfo(music)
-                    true
-                }
-                3 -> {
-                    // Partager
-                    Toast.makeText(this, "Fonctionnalité de partage à venir", Toast.LENGTH_SHORT).show()
                     true
                 }
                 else -> false
@@ -269,7 +423,6 @@ class MainActivity : AppCompatActivity() {
     private fun deleteMusic(music: Music, position: Int) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Android 10+ : Utiliser le MediaStore avec gestion de la permission
                 val uri = ContentUris.withAppendedId(
                     MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                     music.id
@@ -279,7 +432,6 @@ class MainActivity : AppCompatActivity() {
                     val deletedRows = contentResolver.delete(uri, null, null)
 
                     if (deletedRows > 0) {
-                        // Retirer de la liste
                         musicList.remove(music)
                         filteredList.remove(music)
                         musicAdapter.notifyItemRemoved(position)
@@ -292,29 +444,25 @@ class MainActivity : AppCompatActivity() {
                         val recoverableSecurityException = securityException as? RecoverableSecurityException
                             ?: throw securityException
 
-                        // Demander à l'utilisateur l'autorisation de supprimer
                         pendingDeleteMusic = music
                         pendingDeletePosition = position
 
                         val intentSender = recoverableSecurityException.userAction.actionIntent.intentSender
-                        val request = IntentSenderRequest.Builder(intentSender).build()
+                        val request = androidx.activity.result.IntentSenderRequest.Builder(intentSender).build()
                         deleteResultLauncher.launch(request)
                     } else {
                         throw securityException
                     }
                 }
             } else {
-                // Android 9 et inférieur : Suppression directe
                 val file = File(music.filePath)
                 if (file.exists() && file.delete()) {
-                    // Mettre à jour la MediaStore
                     val uri = ContentUris.withAppendedId(
                         MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                         music.id
                     )
                     contentResolver.delete(uri, null, null)
 
-                    // Retirer de la liste
                     musicList.remove(music)
                     filteredList.remove(music)
                     musicAdapter.notifyItemRemoved(position)
@@ -345,69 +493,5 @@ class MainActivity : AppCompatActivity() {
             .setMessage(info)
             .setPositiveButton("OK", null)
             .show()
-    }
-
-    private fun filterMusic(query: String) {
-        filteredList.clear()
-        if (query.isEmpty()) {
-            filteredList.addAll(musicList)
-        } else {
-            musicList.forEach { music ->
-                if (music.title.lowercase().contains(query.lowercase())) {
-                    filteredList.add(music)
-                }
-            }
-        }
-        // Mettre à jour la playlist après le filtrage
-        MusicPlayerManager.setPlaylist(filteredList)
-        musicAdapter.updateList(filteredList)
-    }
-
-    private fun setupButtons() {
-        // Bouton Favoris
-        findViewById<LinearLayout>(R.id.btnFavoris).setOnClickListener {
-            Toast.makeText(this, "Page Favoris", Toast.LENGTH_SHORT).show()
-            // TODO: Ouvrir la page Favoris
-        }
-
-        // Bouton Créer
-        findViewById<LinearLayout>(R.id.btnCreer).setOnClickListener {
-            Toast.makeText(this, "Page Créer", Toast.LENGTH_SHORT).show()
-            // TODO: Ouvrir la page Créer
-        }
-
-        // Lecture aléatoire
-        btnLectureAleatoire.setOnClickListener {
-            // Toggle le mode aléatoire
-            isShuffleEnabled = !isShuffleEnabled
-            MusicPlayerManager.setShuffleMode(isShuffleEnabled)
-
-            updateShuffleButtonUI()
-
-            // Si on active le mode aléatoire et qu'il y a des musiques
-            if (isShuffleEnabled && musicList.isNotEmpty()) {
-                val randomMusic = musicList.random()
-                MusicPlayerManager.setPlaylist(musicList)
-                MusicPlayerManager.playMusic(this, randomMusic) { error ->
-                    Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
-                }
-                Toast.makeText(this, "Lecture aléatoire: ${randomMusic.title}", Toast.LENGTH_SHORT).show()
-            } else if (musicList.isEmpty()) {
-                Toast.makeText(this, "Aucune musique disponible", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "Mode aléatoire désactivé", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        // Bouton Accueil (navigation bas)
-        findViewById<LinearLayout>(R.id.btnHome).setOnClickListener {
-            Toast.makeText(this, "Déjà sur l'accueil", Toast.LENGTH_SHORT).show()
-        }
-
-        // Bouton Milieu (navigation bas)
-        findViewById<LinearLayout>(R.id.btnMiddle).setOnClickListener {
-            Toast.makeText(this, "Page Albums", Toast.LENGTH_SHORT).show()
-            // TODO: Ouvrir la page Albums/Playlists
-        }
     }
 }

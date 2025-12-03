@@ -83,8 +83,9 @@ object MusicPlayerManager {
         val nextMusic = playlist[nextIndex]
         playMusic(context, nextMusic, onError)
 
-        // Notifier l'UI
+        // Notifier l'UI et mettre à jour la notification
         onMusicComplete?.invoke()
+        updateNotification(context)
     }
 
     fun playPreviousMusic(context: Context, onError: (String) -> Unit) {
@@ -105,8 +106,20 @@ object MusicPlayerManager {
         val prevMusic = playlist[prevIndex]
         playMusic(context, prevMusic, onError)
 
-        // Notifier l'UI
+        // Notifier l'UI et mettre à jour la notification
         onMusicComplete?.invoke()
+        updateNotification(context)
+    }
+
+    private fun updateNotification(context: Context) {
+        // Envoyer une intention pour mettre à jour la notification
+        val updateIntent = android.content.Intent(context, com.example.musique.MusicService::class.java)
+        updateIntent.action = "ACTION_UPDATE"
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            context.startForegroundService(updateIntent)
+        } else {
+            context.startService(updateIntent)
+        }
     }
 
     fun pauseMusic() {
