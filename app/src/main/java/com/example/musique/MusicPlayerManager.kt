@@ -164,4 +164,7 @@ object MusicPlayerManager {
     }
 
     fun getCurrentIndex(): Int = currentIndex
+    fun getAudioSessionId(): Int {
+        return mediaPlayer?.audioSessionId ?: 0
+    }
 }

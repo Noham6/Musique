@@ -29,7 +29,6 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
-import kotlin.time.Duration
 
 class MainActivity : AppCompatActivity() {
 
@@ -52,7 +51,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var currentTime: TextView
     private lateinit var totalTime: TextView
 
+    // Visualiseur audio
+    private lateinit var audioVisualizer: AudioVisualizerView
+
     private val PERMISSION_REQUEST_CODE = 101
+    private val AUDIO_PERMISSION_REQUEST = 102
 
     // Mode lecture aléatoire
     private var isShuffleEnabled = false
@@ -121,6 +124,9 @@ class MainActivity : AppCompatActivity() {
         currentTime = findViewById(R.id.currentTime)
         totalTime = findViewById(R.id.totalTime)
 
+        // Visualiseur audio
+        audioVisualizer = findViewById(R.id.audioVisualizer)
+
         // Initialiser les listes
         musicList = mutableListOf()
         filteredList = mutableListOf()
@@ -130,6 +136,12 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 updateShuffleButtonUI()
                 updatePlayerUI()
+
+                // Redémarrer le visualiseur pour la nouvelle musique
+                val sessionId = MusicPlayerManager.getAudioSessionId()
+                if (sessionId != 0) {
+                    audioVisualizer.startVisualization(sessionId)
+                }
             }
         }
 
@@ -144,6 +156,15 @@ class MainActivity : AppCompatActivity() {
 
                 // Afficher le lecteur
                 showMusicPlayer(music)
+
+                // Démarrer la visualisation audio avec l'audio session ID
+                val sessionId = MusicPlayerManager.getAudioSessionId()
+                if (sessionId != 0) {
+                    audioVisualizer.startVisualization(sessionId)
+                } else {
+                    // Fallback en mode aléatoire si pas d'audio session
+                    audioVisualizer.startAnimation()
+                }
 
                 Toast.makeText(this@MainActivity, "Lecture: ${music.title}", Toast.LENGTH_SHORT).show()
             }
@@ -192,6 +213,7 @@ class MainActivity : AppCompatActivity() {
 
         // Vérifier et demander les permissions
         checkPermissions()
+        checkAudioPermission()
     }
 
     private fun setupPlayerButtons() {
@@ -200,9 +222,19 @@ class MainActivity : AppCompatActivity() {
             if (MusicPlayerManager.isPlaying()) {
                 MusicPlayerManager.pauseMusic()
                 btnPlayPausePlayer.setImageResource(android.R.drawable.ic_media_play)
+                audioVisualizer.stopVisualization()
             } else {
                 MusicPlayerManager.resumeMusic()
                 btnPlayPausePlayer.setImageResource(android.R.drawable.ic_media_pause)
+
+                // Redémarrer la visualisation
+                val sessionId = MusicPlayerManager.getAudioSessionId()
+                if (sessionId != 0) {
+                    audioVisualizer.startVisualization(sessionId)
+                } else {
+                    audioVisualizer.startAnimation()
+                }
+
                 handler.post(updateSeekBar)
             }
         }
@@ -212,12 +244,24 @@ class MainActivity : AppCompatActivity() {
             MusicPlayerManager.playPreviousMusic(this) { error ->
                 Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
             }
+
+            // Redémarrer la visualisation pour la nouvelle musique
+            val sessionId = MusicPlayerManager.getAudioSessionId()
+            if (sessionId != 0) {
+                audioVisualizer.startVisualization(sessionId)
+            }
         }
 
         // Suivant
         btnNext.setOnClickListener {
             MusicPlayerManager.playNextMusic(this) { error ->
                 Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
+            }
+
+            // Redémarrer la visualisation pour la nouvelle musique
+            val sessionId = MusicPlayerManager.getAudioSessionId()
+            if (sessionId != 0) {
+                audioVisualizer.startVisualization(sessionId)
             }
         }
     }
@@ -267,17 +311,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun checkAudioPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                arrayOf(Manifest.permission.RECORD_AUDIO), AUDIO_PERMISSION_REQUEST)
+        }
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                loadMusicFromDevice()
-            } else {
-                Toast.makeText(this, "Permission refusée. Impossible de charger les musiques.", Toast.LENGTH_LONG).show()
+        when (requestCode) {
+            PERMISSION_REQUEST_CODE -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    loadMusicFromDevice()
+                } else {
+                    Toast.makeText(this, "Permission refusée. Impossible de charger les musiques.", Toast.LENGTH_LONG).show()
+                }
+            }
+            AUDIO_PERMISSION_REQUEST -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    Toast.makeText(this, "Permission audio accordée", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Permission audio refusée. Le visualiseur utilisera un mode simple.", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -345,9 +406,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupButtons() {
         findViewById<LinearLayout>(R.id.btnFavoris).setOnClickListener {
+            Toast.makeText(this, "Page Favoris", Toast.LENGTH_SHORT).show()
         }
 
         findViewById<LinearLayout>(R.id.btnCreer).setOnClickListener {
+            Toast.makeText(this, "Page Créer", Toast.LENGTH_SHORT).show()
         }
 
         btnLectureAleatoire.setOnClickListener {
@@ -363,18 +426,37 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
                 }
                 showMusicPlayer(randomMusic)
+
+                // Démarrer la visualisation
+                val sessionId = MusicPlayerManager.getAudioSessionId()
+                if (sessionId != 0) {
+                    audioVisualizer.startVisualization(sessionId)
+                } else {
+                    audioVisualizer.startAnimation()
+                }
+
+                Toast.makeText(this, "Lecture aléatoire: ${randomMusic.title}", Toast.LENGTH_SHORT).show()
             } else if (musicList.isEmpty()) {
                 Toast.makeText(this, "Aucune musique disponible", Toast.LENGTH_SHORT).show()
             } else {
+                audioVisualizer.stopVisualization()
                 Toast.makeText(this, "Mode aléatoire désactivé", Toast.LENGTH_SHORT).show()
             }
         }
 
+        findViewById<LinearLayout>(R.id.btnHome).setOnClickListener {
+            Toast.makeText(this, "Déjà sur l'accueil", Toast.LENGTH_SHORT).show()
+        }
+
+        findViewById<LinearLayout>(R.id.btnMiddle).setOnClickListener {
+            Toast.makeText(this, "Page Albums", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacks(updateSeekBar)
+        audioVisualizer.stopVisualization()
         MusicPlayerManager.stopMusic()
     }
 
